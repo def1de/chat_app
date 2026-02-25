@@ -119,7 +119,7 @@ pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
 }
 
 pub async fn auth_get() -> Html<&'static str> {
-    Html(std::include_str!("../templates/auth.html"))
+    Html(std::include_str!("../../templates/auth.html"))
 }
 
 #[derive(serde::Deserialize)]

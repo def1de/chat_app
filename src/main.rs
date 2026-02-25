@@ -28,7 +28,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let database: Database = Database::new();
+        let database: Database = Database::new("database.db");
         match database.create() {
             Ok(_) => println!("Database schema created successfully."),
             Err(e) => panic!("Error creating database schema: {}", e),

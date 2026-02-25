@@ -2,6 +2,8 @@ use sqlite;
 use std::sync::{Arc, Mutex};
 use crate::template::MessageView;
 
+// Module to run tests on the database
+mod test;
 pub struct Database {
     connection: Arc<Mutex<sqlite::Connection>>,
 }
@@ -15,8 +17,8 @@ impl Clone for Database {
 }
 
 impl Database {
-    pub fn new() -> Self {
-        let conn = match sqlite::open("database.db") {
+    pub fn new(path: &str) -> Self {
+        let conn = match sqlite::open(path) {
             Ok(conn) => conn,
             Err(e) => panic!("Error opening database: {}", e),
         };
@@ -83,6 +85,27 @@ impl Database {
         stmt.bind((3, chat_id))?;
         stmt.next()?;
         Ok(())
+    }
+
+        pub fn get_messages(&self, chat_id:i64, limit: i64) -> Result<Vec<MessageView>, sqlite::Error> {
+        let conn = self.connection.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT m.username, m.message_text
+                        FROM Messages AS m
+                        JOIN Chats AS c ON c.chatID = m.chatID
+                        WHERE c.chatID = ?
+                        ORDER BY timestamp DESC LIMIT ?;"
+        )?;
+        stmt.bind((1, chat_id))?;
+        stmt.bind((2, limit))?;
+        
+        let mut messages = Vec::new();
+        while let sqlite::State::Row = stmt.next()? {
+            let username: String = stmt.read(0)?;
+            let message_text: String = stmt.read(1)?;
+            messages.push(MessageView { username, text: message_text });
+        }
+        Ok(messages)
     }
 
     pub fn get_user(&self, username: &str) -> Result<Option<(i64, String)>, sqlite::Error> {
@@ -165,27 +188,6 @@ impl Database {
         stmt.bind((1, session_token))?;
         stmt.next()?;
         Ok(())
-    }
-
-    pub fn get_messages(&self, chat_id:i64, limit: i64) -> Result<Vec<MessageView>, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT m.username, m.message_text
-                        FROM Messages AS m
-                        JOIN Chats AS c ON c.chatID = m.chatID
-                        WHERE c.chatID = ?
-                        ORDER BY timestamp DESC LIMIT ?;"
-        )?;
-        stmt.bind((1, chat_id))?;
-        stmt.bind((2, limit))?;
-        
-        let mut messages = Vec::new();
-        while let sqlite::State::Row = stmt.next()? {
-            let username: String = stmt.read(0)?;
-            let message_text: String = stmt.read(1)?;
-            messages.push(MessageView { username, text: message_text });
-        }
-        Ok(messages)
     }
 
     pub fn check_chat_membership(&self, user_id: i64, chat_id: i64) -> Result<bool, sqlite::Error> {
