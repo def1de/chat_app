@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO Messages (message_text, username, chatID) VALUES (?, ?, ?);",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8b362053dd00b23c9dee1c3bbad682c80d0def5fa1890277ac4a9f26215816f6"
+}

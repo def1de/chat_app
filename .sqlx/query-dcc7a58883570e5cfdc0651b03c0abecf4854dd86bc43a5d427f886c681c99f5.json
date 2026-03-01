@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO InviteCodes (code, chatID, expires_at) VALUES (?, ?, datetime('now', '+7 days'));",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "dcc7a58883570e5cfdc0651b03c0abecf4854dd86bc43a5d427f886c681c99f5"
+}

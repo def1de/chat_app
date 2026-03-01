@@ -1,20 +1,26 @@
-use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{WebSocketUpgrade, Path};
-use axum::response::IntoResponse;
-use axum::http::StatusCode;
-use uuid::Uuid;
-use futures_util::{stream::StreamExt, sink::SinkExt};
-use tokio::sync::mpsc;
-use crate::{AppState, SocketData};
 use crate::auth::AuthenticatedUser;
+use crate::{AppState, SocketData};
+use axum::extract::ws::{Message, WebSocket};
+use axum::extract::{Path, WebSocketUpgrade};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use futures_util::{sink::SinkExt, stream::StreamExt};
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
 pub async fn chatsocket_handler(
     ws: WebSocketUpgrade,
-    axum::extract::State(state): axum::extract::State<AppState>,
+    axum::extract::State(mut state): axum::extract::State<AppState>,
     Path(chat_id): Path<i64>,
-    user: AuthenticatedUser
+    user: AuthenticatedUser,
 ) -> impl IntoResponse {
-    if state.db_action().check_chat_membership(user.user_id, chat_id).unwrap_or(false) == false {
+    if state
+        .db
+        .check_chat_membership(user.user_id, chat_id)
+        .await
+        .unwrap_or(false)
+        == false
+    {
         return (StatusCode::FORBIDDEN, "You are not a member of this chat").into_response();
     }
 
@@ -22,7 +28,7 @@ pub async fn chatsocket_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, state, chat_id, username))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, chat_id: i64, username: String) {
+async fn handle_socket(socket: WebSocket, mut state: AppState, chat_id: i64, username: String) {
     let socket_id = Uuid::new_v4().to_string(); // Unique ID for each socket
     let (tx, mut rx) = mpsc::unbounded_channel();
     let (mut ws_sender, mut ws_receiver) = socket.split();
@@ -56,11 +62,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, chat_id: i64, usernam
     while let Some(Ok(msg)) = ws_receiver.next().await {
         match msg {
             Message::Text(text) => {
-                match state.db_action().insert_message(&text, &username, chat_id) {
+                match state.db.insert_message(&text, &username, chat_id).await {
                     Ok(_) => (),
                     Err(e) => {
                         eprintln!("Failed to inserte a message: {}", e);
-                        continue
+                        continue;
                     }
                 };
 

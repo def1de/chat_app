@@ -63,7 +63,7 @@ Prerequisites: Rust toolchain (stable). On Linux, ensure SQLite is available (li
 1. Build and run
 
 -   `cargo run` (debug build)
--   The server binds by default to `192.168.1.233:1578` (see `src/main.rs`). Change this to your local IP or `127.0.0.1:1578` for local use.
+-   The server binds by default to `0.0.0.0:1578` (see `src/main.rs`). Change this to your local IP or `127.0.0.1:1578` for local use.
 
 2. Open the app
 

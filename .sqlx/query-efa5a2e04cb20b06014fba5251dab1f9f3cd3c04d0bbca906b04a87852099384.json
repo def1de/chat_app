@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT s.userID, u.username\n                        FROM Sessions AS s\n                        JOIN Users AS u ON u.userID = s.userID\n                        WHERE session_token = ? AND expires_at > datetime('now');",
+  "describe": {
+    "columns": [
+      {
+        "name": "userID",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "efa5a2e04cb20b06014fba5251dab1f9f3cd3c04d0bbca906b04a87852099384"
+}

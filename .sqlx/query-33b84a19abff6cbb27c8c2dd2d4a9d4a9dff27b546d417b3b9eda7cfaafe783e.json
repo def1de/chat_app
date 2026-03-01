@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT m.username, m.message_text\n                        FROM Messages AS m\n                        JOIN Chats AS c ON c.chatID = m.chatID\n                        WHERE c.chatID = ?\n                        ORDER BY timestamp DESC LIMIT ?;",
+  "describe": {
+    "columns": [
+      {
+        "name": "username",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_text",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "33b84a19abff6cbb27c8c2dd2d4a9d4a9dff27b546d417b3b9eda7cfaafe783e"
+}

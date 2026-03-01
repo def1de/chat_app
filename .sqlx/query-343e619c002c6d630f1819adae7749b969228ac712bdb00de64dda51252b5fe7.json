@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM ChatMembers WHERE userID = ? AND chatID = ?;",
+  "describe": {
+    "columns": [
+      {
+        "name": "chatID",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "userID",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "343e619c002c6d630f1819adae7749b969228ac712bdb00de64dda51252b5fe7"
+}

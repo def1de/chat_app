@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO Sessions (userID, session_token, expires_at) VALUES (?, ?, datetime('now', '+7 days'));",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "5b0dc4fbcf2d5428fbde43d2beeb18f2e44a8220c0713f0408674e4192681bae"
+}

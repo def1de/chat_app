@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO ChatMembers (chatID, userID) VALUES (?, ?);",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "de1e3d888381d56147988c403b51ad86a663fe1523eed41de96085b0be8df900"
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT c.chatID, c.chat_name\n                        FROM Chats AS c\n                        JOIN ChatMembers AS cm ON cm.chatID = c.chatID\n                        WHERE cm.userID = ?;",
+  "describe": {
+    "columns": [
+      {
+        "name": "chatID",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "chat_name",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0af2d000b342ff4924e955faed908d6f9d4ae64ee64cc908c9c5336bfcf7c7ba"
+}

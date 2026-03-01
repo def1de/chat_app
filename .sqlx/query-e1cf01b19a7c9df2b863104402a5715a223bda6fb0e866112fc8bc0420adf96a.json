@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO Chats (chat_name) VALUES (?) RETURNING chatID;",
+  "describe": {
+    "columns": [
+      {
+        "name": "chatID",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e1cf01b19a7c9df2b863104402a5715a223bda6fb0e866112fc8bc0420adf96a"
+}

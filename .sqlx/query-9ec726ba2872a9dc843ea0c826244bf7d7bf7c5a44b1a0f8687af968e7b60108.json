@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT userID, username FROM Users WHERE username = ?;",
+  "describe": {
+    "columns": [
+      {
+        "name": "userID",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9ec726ba2872a9dc843ea0c826244bf7d7bf7c5a44b1a0f8687af968e7b60108"
+}

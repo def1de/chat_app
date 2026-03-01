@@ -1,38 +1,38 @@
-use sqlite;
-use std::sync::{Arc, Mutex};
 use crate::template::MessageView;
+use sqlx::SqlitePool;
 
 // Module to run tests on the database
-mod test;
+// mod test;
+
 pub struct Database {
-    connection: Arc<Mutex<sqlite::Connection>>,
+    pool: SqlitePool,
 }
 
 impl Clone for Database {
     fn clone(&self) -> Self {
         Database {
-            connection: Arc::clone(&self.connection),
+            pool: self.pool.clone(),
         }
     }
 }
 
 impl Database {
-    pub fn new(path: &str) -> Self {
-        let conn = match sqlite::open(path) {
-            Ok(conn) => conn,
-            Err(e) => panic!("Error opening database: {}", e),
-        };
+    pub async fn new(path: &str) -> Self {
+        let pool = SqlitePool::connect(path)
+            .await
+            .expect("Error opening database");
 
-        conn.execute("PRAGMA foreign_keys = ON;").ok();
+        sqlx::query("PRAGMA foreign_keys = ON;")
+            .execute(&pool)
+            .await
+            .expect("Failed to enable foreign keys");
 
-        Database { 
-            connection: Arc::new(Mutex::new(conn)),
-        }
+        Database { pool: pool }
     }
 
-    pub fn create(&self) -> Result<(), sqlite::Error> {
+    pub async fn create(&self) -> Result<(), sqlx::Error> {
         println!("Creating database schema...");
-        self.connection.lock().unwrap().execute(
+        sqlx::query(
             "
             CREATE TABLE IF NOT EXISTS Messages (
                 messageID INTEGER PRIMARY KEY,
@@ -73,209 +73,251 @@ impl Database {
             );
             ",
         )
-    }
+        .execute(&self.pool)
+        .await?;
 
-    pub fn insert_message(&self, message_text: &str, username: &str, chat_id: i64) -> Result<(), sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "INSERT INTO Messages (message_text, username, chatID) VALUES (?, ?, ?);"
-        )?;
-        stmt.bind((1, message_text))?;
-        stmt.bind((2, username))?;
-        stmt.bind((3, chat_id))?;
-        stmt.next()?;
         Ok(())
     }
 
-        pub fn get_messages(&self, chat_id:i64, limit: i64) -> Result<Vec<MessageView>, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT m.username, m.message_text
+    pub async fn insert_message(
+        &mut self,
+        message_text: &str,
+        username: &str,
+        chat_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        // TODO: Maybe use query_as()
+        sqlx::query!(
+            r#"INSERT INTO Messages (message_text, username, chatID) VALUES (?, ?, ?);"#,
+            message_text,
+            username,
+            chat_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_messages(
+        &mut self,
+        chat_id: i64,
+        limit: i64,
+    ) -> Result<Vec<MessageView>, sqlx::Error> {
+        let rows = sqlx::query!(
+            r#"SELECT m.username, m.message_text
                         FROM Messages AS m
                         JOIN Chats AS c ON c.chatID = m.chatID
                         WHERE c.chatID = ?
-                        ORDER BY timestamp DESC LIMIT ?;"
-        )?;
-        stmt.bind((1, chat_id))?;
-        stmt.bind((2, limit))?;
-        
+                        ORDER BY timestamp DESC LIMIT ?;"#,
+            chat_id,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
         let mut messages = Vec::new();
-        while let sqlite::State::Row = stmt.next()? {
-            let username: String = stmt.read(0)?;
-            let message_text: String = stmt.read(1)?;
-            messages.push(MessageView { username, text: message_text });
+
+        for row in rows {
+            let message = MessageView {
+                username: row.username,
+                text: row.message_text,
+            };
+            messages.push(message);
         }
+
         Ok(messages)
     }
 
-    pub fn get_user(&self, username: &str) -> Result<Option<(i64, String)>, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT userID, username FROM Users WHERE username = ?;"
-        )?;
-        stmt.bind((1, username))?;
-        if let sqlite::State::Row = stmt.next()? {
-            let user_id: i64 = stmt.read(0)?;
-            let username: String = stmt.read(1)?;
-            Ok(Some((user_id, username)))
-        } else {
-            Ok(None)
+    pub async fn get_user(&mut self, username: &str) -> Result<Option<(i64, String)>, sqlx::Error> {
+        let user = sqlx::query!(
+            r#"SELECT userID, username FROM Users WHERE username = ?;"#,
+            username
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(Some((user.userID, user.username)))
+    }
+
+    pub async fn check_password(&mut self, username: &str, password_hash: &str) -> bool {
+        let result = sqlx::query!(
+            r#"SELECT password_hash FROM Users WHERE username = ?;"#,
+            username
+        )
+        .fetch_optional(&self.pool)
+        .await;
+
+        match result {
+            Ok(Some(row)) => row.password_hash == password_hash,
+            _ => false,
         }
     }
 
-    pub fn check_password(&self, username: &str, password_hash: &str) -> bool {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT password_hash FROM Users WHERE username = ?;"
-        ).unwrap();
+    pub async fn add_user(
+        &mut self,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<(), sqlx::Error> {
+        Box::new(sqlx::query!(
+            "INSERT INTO Users (username, password_hash) VALUES (?, ?);",
+            username,
+            password_hash
+        ))
+        .execute(&self.pool)
+        .await?;
 
-        // Return false if binding fails
-        if stmt.bind((1, username)).is_err() {
-            return false;
-        }
-
-        if let sqlite::State::Row = stmt.next().unwrap_or(sqlite::State::Done) {
-            let stored_hash: String = stmt.read(0).unwrap_or_default();
-            stored_hash == password_hash
-        } else {
-            false
-        }
+        Ok(())
     }
+    //
+    pub async fn create_session(
+        &mut self,
+        user_id: i64,
+        session_token: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"INSERT INTO Sessions (userID, session_token, expires_at) VALUES (?, ?, datetime('now', '+7 days'));"#,
+            user_id,
+            session_token,
+        ).execute(&self.pool).await?;
 
-    pub fn add_user(&self, username: &str, password_hash: &str) -> Result<(), sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "INSERT INTO Users (username, password_hash) VALUES (?, ?);"
-        )?;
-        stmt.bind((1, username))?;
-        stmt.bind((2, password_hash))?;
-        stmt.next()?;
         Ok(())
     }
 
-    pub fn create_session(&self, user_id: i64, session_token: &str) -> Result<(), sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "INSERT INTO Sessions (userID, session_token, expires_at) VALUES (?, ?, datetime('now', '+7 days'));"
-        )?;
-        stmt.bind((1, user_id))?;
-        stmt.bind((2, session_token))?;
-        stmt.next()?;
-        Ok(())
-    }
-
-    pub fn validate_session(&self, session_token: &str) -> Result<Option<(i64, String)>, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT s.userID, u.username
+    pub async fn validate_session(
+        &self,
+        session_token: &str,
+    ) -> Result<Option<(i64, String)>, sqlx::Error> {
+        let result = sqlx::query!(
+            r#"SELECT s.userID, u.username
                         FROM Sessions AS s
                         JOIN Users AS u ON u.userID = s.userID
-                        WHERE session_token = ? AND expires_at > datetime('now');"
-        )?;
-        stmt.bind((1, session_token))?;
-        if let sqlite::State::Row = stmt.next()? {
-            let user_id: i64 = stmt.read(0)?;
-            let username: String = stmt.read(1)?;
-            Ok(Some((user_id, username)))
-        } else {
-            Ok(None)
+                        WHERE session_token = ? AND expires_at > datetime('now');"#,
+            session_token,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match result {
+            Some(row) => Ok(Some((row.userID, row.username))),
+            None => Ok(None),
         }
     }
 
-    pub fn delete_session(&self, session_token: &str) -> Result<(), sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare("DELETE FROM Sessions WHERE session_token = ?;")?;
-        stmt.bind((1, session_token))?;
-        stmt.next()?;
+    pub async fn delete_session(&mut self, session_token: &str) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"DELETE FROM Sessions WHERE session_token = ?;"#,
+            session_token
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn check_chat_membership(&self, user_id: i64, chat_id: i64) -> Result<bool, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT 1 FROM ChatMembers WHERE userID = ? AND chatID = ?;"
-        )?;
-        stmt.bind((1, user_id))?;
-        stmt.bind((2, chat_id))?;
-        if let sqlite::State::Row = stmt.next()? {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+    pub async fn check_chat_membership(
+        &mut self,
+        user_id: i64,
+        chat_id: i64,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query!(
+            r#"SELECT * FROM ChatMembers WHERE userID = ? AND chatID = ?;"#,
+            user_id,
+            chat_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.is_some())
     }
 
-    pub fn get_user_chats(&self, user_id: i64) -> Result<Vec<(i64, String)>, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT c.chatID, c.chat_name
+    pub async fn get_user_chats(
+        &mut self,
+        user_id: i64,
+    ) -> Result<Vec<(i64, String)>, sqlx::Error> {
+        let chats_query = sqlx::query!(
+            r#"SELECT c.chatID, c.chat_name
                         FROM Chats AS c
                         JOIN ChatMembers AS cm ON cm.chatID = c.chatID
-                        WHERE cm.userID = ?;"
-        )?;
-        stmt.bind((1, user_id))?;
+                        WHERE cm.userID = ?;"#,
+            user_id
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let mut chats = Vec::new();
-        while let sqlite::State::Row = stmt.next()? {
-            let chat_id: i64 = stmt.read(0)?;
-            let chat_name: String = stmt.read(1)?;
-            chats.push((chat_id, chat_name));
+
+        for chat in chats_query {
+            chats.push((chat.chatID, chat.chat_name));
         }
+
         Ok(chats)
     }
 
-    pub fn create_chat(&self, chat_name: &str, user_id: i64) -> Result<i64, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-
+    pub async fn create_chat(&mut self, chat_name: &str, user_id: i64) -> Result<i64, sqlx::Error> {
         let chat_id: i64 = {
-            let mut stmt = conn.prepare("INSERT INTO Chats (chat_name) VALUES (?) RETURNING chatID;")?;
-            stmt.bind((1, chat_name))?;
-            match stmt.next()? { sqlite::State::Row => stmt.read(0)?, _ => unreachable!() }
+            sqlx::query!(
+                r#"INSERT INTO Chats (chat_name) VALUES (?) RETURNING chatID;"#,
+                chat_name
+            )
+            .fetch_one(&self.pool)
+            .await?
+            .chatID
         };
 
         {
-            let mut stmt = conn.prepare(
-                "INSERT INTO ChatMembers (chatID, userID) VALUES (?, ?);"
-            )?;
-            stmt.bind((1, chat_id))?;
-            stmt.bind((2, user_id))?;
-            stmt.next()?;
+            sqlx::query!(
+                r#"INSERT INTO ChatMembers (chatID, userID) VALUES (?, ?);"#,
+                chat_id,
+                user_id
+            )
+            .execute(&self.pool)
+            .await?;
         }
         Ok(chat_id)
     }
 
-    pub fn add_user_to_chat(&self, user_id: i64, chat_id: i64) -> Result<(), sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "INSERT INTO ChatMembers (chatID, userID) VALUES (?, ?);"
-        )?;
-        stmt.bind((1, chat_id))?;
-        stmt.bind((2, user_id))?;
-        stmt.next()?;
+    pub async fn add_user_to_chat(
+        &mut self,
+        user_id: i64,
+        chat_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"INSERT INTO ChatMembers (chatID, userID) VALUES (?, ?);"#,
+            chat_id,
+            user_id,
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn get_chat_id_by_invite_code(&self, code: &str) -> Result<Option<i64>, sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT chatID FROM InviteCodes WHERE code = ? AND expires_at > datetime('now');"
-        )?;
-        stmt.bind((1, code))?;
-        if let sqlite::State::Row = stmt.next()? {
-            let chat_id: i64 = stmt.read(0)?;
-            Ok(Some(chat_id))
-        } else {
-            Ok(None)
+    pub async fn get_chat_id_by_invite_code(
+        &mut self,
+        code: &str,
+    ) -> Result<Option<i64>, sqlx::Error> {
+        let row = sqlx::query!(
+            r#"SELECT chatID FROM InviteCodes WHERE code = ? AND expires_at > datetime('now');"#,
+            code
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => Ok(Some(row.chatID)),
+            None => Ok(None),
         }
     }
 
-    pub fn create_invite_code(&self, chat_id: i64, code: &str) -> Result<(), sqlite::Error> {
-        let conn = self.connection.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "INSERT INTO InviteCodes (code, chatID, expires_at) VALUES (?, ?, datetime('now', '+7 days'));"
-        )?;
-        stmt.bind((1, code))?;
-        stmt.bind((2, chat_id))?;
-        stmt.next()?;
+    pub async fn create_invite_code(
+        &mut self,
+        chat_id: i64,
+        code: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"INSERT INTO InviteCodes (code, chatID, expires_at) VALUES (?, ?, datetime('now', '+7 days'));"#,
+            code,
+            chat_id,
+        ).execute(&self.pool).await?;
+
         Ok(())
     }
 }
